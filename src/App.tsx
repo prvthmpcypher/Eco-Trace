@@ -10,6 +10,60 @@ import { INITIAL_LOGS, INITIAL_CHALLENGES, INITIAL_LOG_TEMPLATES, INITIAL_GOALS 
 import Dashboard from "./components/Dashboard";
 import AddActivity from "./components/AddActivity";
 
+
+// ====== LOCALSTORAGE SCHEMA VALIDATION TYPE GUARDS ======
+function isValidProfile(data: any): data is { name: string; avatarUrl: string; dailyTarget: number; location: string } {
+  return (
+    data &&
+    typeof data === "object" &&
+    typeof data.name === "string" &&
+    typeof data.avatarUrl === "string" &&
+    typeof data.dailyTarget === "number" &&
+    typeof data.location === "string"
+  );
+}
+
+function isValidLog(data: any): data is ActivityLog {
+  const validCategories = ["Transport", "Food", "Energy", "Shopping", "Waste"];
+  return (
+    data &&
+    typeof data === "object" &&
+    typeof data.id === "string" &&
+    validCategories.includes(data.category) &&
+    typeof data.name === "string" &&
+    typeof data.amount === "number" &&
+    typeof data.unit === "string" &&
+    typeof data.co2Saved === "number" &&
+    typeof data.timestamp === "string"
+  );
+}
+
+function isValidChallenge(data: any): data is Challenge {
+  return (
+    data &&
+    typeof data === "object" &&
+    typeof data.id === "string" &&
+    typeof data.title === "string" &&
+    typeof data.description === "string" &&
+    typeof data.category === "string" &&
+    typeof data.progressPercent === "number" &&
+    Array.isArray(data.friendsJoined) &&
+    typeof data.joined === "boolean"
+  );
+}
+
+function isValidGoal(data: any): data is Goal {
+  return (
+    data &&
+    typeof data === "object" &&
+    typeof data.id === "string" &&
+    typeof data.title === "string" &&
+    typeof data.targetReduction === "number" &&
+    typeof data.currentProgress === "number" &&
+    typeof data.category === "string"
+  );
+}
+
 export default function App() {
   // Navigation: "Home" | "Track" | "Insights" | "Goals" | "Community" | "AddActivityFlow"
   const [activeTab, setActiveTab] = useState<string>("Home");
@@ -25,7 +79,10 @@ export default function App() {
   }>(() => {
     const saved = localStorage.getItem("ecotrace_profile");
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed = JSON.parse(saved);
+        if (isValidProfile(parsed)) return parsed;
+      } catch (e) { console.error(e); }
     }
     return {
       name: "Priya 🌿",
@@ -37,11 +94,14 @@ export default function App() {
 
   const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
 
-  // Core Data State (persisted in localStorage)
+  // Core Data State (persisted in localStorage with schema validation checks)
   const [logs, setLogs] = useState<ActivityLog[]>(() => {
     const saved = localStorage.getItem("ecotrace_logs");
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.every(isValidLog)) return parsed;
+      } catch (e) { console.error(e); }
     }
     return INITIAL_LOGS;
   });
@@ -49,7 +109,10 @@ export default function App() {
   const [challenges, setChallenges] = useState<Challenge[]>(() => {
     const saved = localStorage.getItem("ecotrace_challenges");
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.every(isValidChallenge)) return parsed;
+      } catch (e) { console.error(e); }
     }
     return INITIAL_CHALLENGES;
   });
@@ -57,7 +120,10 @@ export default function App() {
   const [goals, setGoals] = useState<Goal[]>(() => {
     const saved = localStorage.getItem("ecotrace_goals");
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.every(isValidGoal)) return parsed;
+      } catch (e) { console.error(e); }
     }
     return INITIAL_GOALS;
   });

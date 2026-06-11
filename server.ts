@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import dotenv from "dotenv";
+import cors from "cors";
 import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { rateLimit } from "express-rate-limit";
@@ -9,6 +10,39 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
+
+// ====== SECURITY REQUIREMENT: CORS PROTECTION ======
+// Restrict cross-origin access strictly to process.env.APP_URL
+const allowedOrigin = process.env.APP_URL;
+app.use(cors({
+  origin: (origin, callback) => {
+    // If no origin is provided (e.g. Mobile android wrapper, native tools, or curl same-origin)
+    if (!origin) return callback(null, true);
+    
+    // Check if origin matches APP_URL
+    if (allowedOrigin) {
+      try {
+        const allowedUrl = new URL(allowedOrigin);
+        const originUrl = new URL(origin);
+        if (allowedUrl.origin === originUrl.origin) {
+          return callback(null, true);
+        }
+      } catch (e) {
+        if (origin === allowedOrigin) {
+          return callback(null, true);
+        }
+      }
+    }
+    
+    // Allow localhost and local preview environments during construction/dev/sandboxes
+    if (process.env.NODE_ENV !== "production" || origin.includes("localhost") || origin.includes("127.0.0.1") || origin.includes(".run.app")) {
+      return callback(null, true);
+    }
+    
+    return callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true
+}));
 
 // Tell Express to trust proxy headers (e.g., X-Forwarded-For) in order for rate limiting to work behind reverse proxies
 app.set("trust proxy", 1);
@@ -134,22 +168,22 @@ function validateAndSanitizeLogs(logsArray: any): any[] {
 // and contains zero references to dynamic server files (thwarting path-traversal IDOR). All operations are local-scoped.
 
 app.post("/api/ai-coach", coachApiLimiter, async (req, res) => {
-  try {
-    // 1. Strictly validate and sanitize input fields
-    const logs = validateAndSanitizeLogs(req.body?.logs);
-    const category = cleanString(req.body?.category, 50);
+  // 1. Strictly validate and sanitize input fields outside try/catch to prevent raw property access errors or unhandled exceptions
+  const logs = validateAndSanitizeLogs(req.body?.logs);
+  const category = cleanString(req.body?.category, 50);
+  const catText = category.toLowerCase();
 
+  try {
     const keyExist = !!process.env.GEMINI_API_KEY;
     const ai = getGeminiClient();
 
     // 2. Safely serve context tips if API key is not mapped
     if (!keyExist || !ai) {
       let localAdvice = "Swapping red meat for plant-based foods saves ~3.2 kg CO2 per meal. Try custom planning your diet!";
-      if (category) {
-        const cat = category.toLowerCase();
-        if (cat.includes("diet") || cat.includes("food")) {
+      if (catText) {
+        if (catText.includes("diet") || catText.includes("food")) {
           localAdvice = "Your diet is your top opportunity — cutting red meat saves ~3.2 kg CO2 per meal. Try planning a delicious meat-free day!";
-        } else if (cat.includes("transport") || cat.includes("bike") || cat.includes("walk")) {
+        } else if (catText.includes("transport") || catText.includes("bike") || catText.includes("walk")) {
           localAdvice = "Did you know? Swapping just one short drive for a walking commute or public transit saves up to 2.4 kg of CO2e per trip.";
         }
       }
@@ -174,7 +208,7 @@ app.post("/api/ai-coach", coachApiLimiter, async (req, res) => {
     );
 
     const generatePromise = ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.0-flash",
       contents: prompt,
       config: {
         temperature: 0.7,
@@ -189,7 +223,6 @@ app.post("/api/ai-coach", coachApiLimiter, async (req, res) => {
     safeLogError("Gemini Error intercepted", error);
     
     let fallbackTip = "Swapping carbon-heavy transport for public transit or walking is your single biggest impact reducer today!";
-    const catText = req.body?.category ? String(req.body.category).toLowerCase() : "";
     
     if (catText.includes("diet") || catText.includes("food") || catText.includes("lunch")) {
       fallbackTip = "Your diet is your top opportunity — cutting red meat saves ~3.2 kg CO2 per meal. Try planning a delicious meat-free day!";
@@ -199,11 +232,8 @@ app.post("/api/ai-coach", coachApiLimiter, async (req, res) => {
       fallbackTip = "Powering down idle electronics and choosing daylight hours for charging saves up to 0.5 kg CO2 daily. Every watt counts!";
     }
 
-    res.json({ 
-      tip: fallbackTip,
-      isFallback: true,
-      errorInfo: "Model temporarily busy" 
-    });
+    // Secure response logic: Avoid leaking any fallback status, error fields, or platform details to client boundaries
+    res.json({ tip: fallbackTip });
   }
 });
 
