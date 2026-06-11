@@ -56,13 +56,20 @@ app.post("/api/ai-coach", async (req, res) => {
       Make sure to sound natural, friendly, and practical (e.g., "Your diet is your top opportunity — cutting red meat saves ~3.2 kg CO2 per meal."). Do not use markdown bullet points. Return just the plain string.
     `;
 
-    const response = await ai.models.generateContent({
+    // Wrap the Gemini api generator with a fast-resolving 4.5 second promise-timeout
+    const timeoutPromise = new Promise<any>((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout of 4500ms exceeded")), 4500)
+    );
+
+    const generatePromise = ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: prompt,
       config: {
         temperature: 0.7,
       }
     });
+
+    const response = await Promise.race([generatePromise, timeoutPromise]);
 
     const tip = response.text?.trim() || "Small steps count! Swapping just one drive for a walk can save about 2.4 kg of CO2.";
     res.json({ tip });
